@@ -14,7 +14,7 @@ const formatDate = (dateString) => {
   });
 };
 
-const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
+const MovieDetail = ({ movie, relatedMovies, loading, error, onBack, onMovieSelect }) => {
   if (!movie) return null;
 
   const watchLinks = movie.whereToWatch || [];
@@ -24,6 +24,8 @@ const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
       <button className="back-button" onClick={onBack} type="button">
         ← Back to discovery
       </button>
+      {loading && <p role="status">Loading title details...</p>}
+      {error && <p role="alert">{error}</p>}
 
       <div
         className="detail-hero"
@@ -65,7 +67,7 @@ const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
             <p>{movie.summary}</p>
           </div>
 
-          <div className="video-panel panel">
+          {movie.trailerUrl && <div className="video-panel panel">
             <h2>Trailer</h2>
             <div className="video-shell">
               <iframe
@@ -77,16 +79,16 @@ const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
                 allowFullScreen
               />
             </div>
-          </div>
+          </div>}
 
           <div className="panel">
             <h2>Where to watch</h2>
             <div className="watch-links">
-              {watchLinks.map((entry) => (
+              {watchLinks.length ? watchLinks.map((entry) => (
                 <a key={`${movie.id}-${entry.name}`} href={entry.url} target="_blank" rel="noreferrer">
                   {entry.name}
                 </a>
-              ))}
+              )) : <span>Availability is not listed for this region.</span>}
             </div>
           </div>
 
@@ -129,10 +131,10 @@ const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
               <li><strong>Runtime:</strong> {formatRuntime(movie.runtime)}</li>
               <li><strong>Type:</strong> {movie.contentType}</li>
               <li><strong>Series status:</strong> {movie.seriesStatus || 'Unknown'}</li>
-              <li><strong>Anime:</strong> {movie.isAnime ? 'Yes' : 'No'}</li>
-              <li><strong>Manga:</strong> {movie.hasManga ? 'Yes' : 'No'}</li>
-              <li><strong>Manhwa:</strong> {movie.hasManhwa ? 'Yes' : 'No'}</li>
-              <li><strong>More entries:</strong> {movie.isSeries ? 'Ongoing franchise' : 'Standalone'}</li>
+              <li><strong>Anime:</strong> {movie.isAnime ? 'Yes' : 'Not identified'}</li>
+              <li><strong>Manga:</strong> {movie.hasManga == null ? 'Unknown' : movie.hasManga ? 'Yes' : 'No'}</li>
+              <li><strong>Manhwa:</strong> {movie.hasManhwa == null ? 'Unknown' : movie.hasManhwa ? 'Yes' : 'No'}</li>
+              <li><strong>More entries:</strong> {movie.seriesStatus?.startsWith('Part of ') ? movie.seriesStatus.slice(8) : movie.isSeries ? 'Series' : 'Standalone'}</li>
             </ul>
           </div>
 
@@ -144,7 +146,7 @@ const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
                   key={relatedMovie.id}
                   className="related-item"
                   type="button"
-                  onClick={() => onMovieSelect(relatedMovie.id)}
+                  onClick={() => onMovieSelect(relatedMovie)}
                 >
                   <img src={relatedMovie.poster} alt={relatedMovie.title} />
                   <div>

@@ -5,8 +5,8 @@ import MovieCard from './components/MovieCard.jsx';
 import MovieDetail from './components/MovieDetail.jsx';
 import AuthPanel from './components/AuthPanel.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
-import { auth, getTrendingMovies } from './appwrite.js';
-import { getMovieById, searchMovieLibrary } from './data.js';
+import { auth } from './appwrite.js';
+import { getRegionCode, getTitleDetails, getTrendingTitles, searchTitles } from './tmdb.js';
 
 const DEFAULT_SETTINGS = {
   region: 'global',
@@ -16,23 +16,32 @@ const DEFAULT_SETTINGS = {
   showGuides: true,
 };
 
+const readStoredValue = (key, fallback) => {
+  try {
+    const storedValue = window.localStorage.getItem(key);
+    return storedValue ? JSON.parse(storedValue) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 const App = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [activeMovieId, setActiveMovieId] = useState(null);
+  const [activeMovie, setActiveMovie] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [recentSearches, setRecentSearches] = useState([
-    'Dune',
-    'spider verse',
-    'solo leveling',
-    'attack on titan',
-  ]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState('');
+  const [apiError, setApiError] = useState('');
+  const [recentSearches, setRecentSearches] = useState(() => readStoredValue('reeli.recentSearches', []));
   const [showSearchHistory, setShowSearchHistory] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [user, setUser] = useState(null);
-  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState(() => ({
+    ...DEFAULT_SETTINGS,
+    ...readStoredValue('reeli.settings', {}),
+  }));
   const [movieList, setMovieList] = useState([]);
-
-  const trendingMovies = useMemo(() => getTrendingMovies(), []);
+  const [trendingMovies, setTrendingMovies] = useState([]);
 
   useEffect(() => {
     const loadSession = async () => {
@@ -46,6 +55,34 @@ const App = () => {
     };
 
     loadSession();
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('reeli.settings', JSON.stringify(settings));
+      if (settings.saveHistory) {
+        window.localStorage.setItem('reeli.recentSearches', JSON.stringify(recentSearches));
+      } else {
+        window.localStorage.removeItem('reeli.recentSearches');
+        setRecentSearches([]);
+      }
+    } catch {
+      // Storage can be unavailable in private browsing or restricted contexts.
+    }
+  }, [settings, recentSearches]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getTrendingTitles(controller.signal)
+      .then((titles) => {
+        setTrendingMovies(titles);
+        setMovieList((current) => current.length ? current : titles);
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') setApiError(error.message);
+      });
+
+    return () => controller.abort();
   }, []);
 
   const updateRecentSearches = (nextSearch) => {
@@ -64,48 +101,92 @@ const App = () => {
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const query = searchTerm.trim();
+    if (!query) {
+      setApiError('');
+      setMovieList(trendingMovies);
+      setIsLoading(false);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
       setIsLoading(true);
-      const matches = searchMovieLibrary(searchTerm);
-      setMovieList(matches);
-      if (searchTerm.trim()) {
-        updateRecentSearches(searchTerm);
+      setApiError('');
+      try {
+        const matches = await searchTitles(query, controller.signal);
+        setMovieList(matches);
+        if (settings.saveHistory) updateRecentSearches(query);
+      } catch (error) {
+        if (error.name !== 'AbortError') setApiError(error.message);
+      } finally {
+        if (!controller.signal.aborted) setIsLoading(false);
       }
-      setTimeout(() => setIsLoading(false), 150);
     }, 200);
 
-    return () => clearTimeout(timer);
-  }, [searchTerm]);
-
-  useEffect(() => {
-    setMovieList(searchMovieLibrary(''));
-  }, []);
-
-  const activeMovie = useMemo(
-    () => getMovieById(activeMovieId),
-    [activeMovieId],
-  );
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [searchTerm, settings.region, settings.saveHistory, trendingMovies]);
 
   const relatedMovies = useMemo(() => {
-    if (!activeMovie) return [];
-
-    const relatedIds = activeMovie.related || [];
-    return relatedIds
-      .map((id) => getMovieById(id))
-      .filter(Boolean)
-      .slice(0, 3);
+    return activeMovie?.related || [];
   }, [activeMovie]);
 
   const applySetting = (key, value) => {
     setSettings((current) => ({ ...current, [key]: value }));
   };
 
-  const handleSelectMovie = (movieId) => {
-    setActiveMovieId(movieId);
+  const handleSelectMovie = async (movie) => {
     setShowSearchHistory(false);
+    setDetailError('');
+    setDetailLoading(true);
+    try {
+      const details = await getTitleDetails(movie, getRegionCode(settings.region));
+      setActiveMovie(details);
+    } catch (error) {
+      setDetailError(error.message);
+      setActiveMovie(movie);
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
-  const clearSearchHistory = () => setRecentSearches([]);
+  const clearSearchHistory = () => {
+    setRecentSearches([]);
+    try {
+      window.localStorage.removeItem('reeli.recentSearches');
+    } catch {
+      // Ignore unavailable browser storage.
+    }
+  };
+
+  const handleSignIn = async () => {
+    try {
+      await auth.signInWithGoogle();
+      const sessionUser = await auth.checkSession();
+      if (sessionUser) {
+        setUser({
+          name: sessionUser.name || 'Google User',
+          email: sessionUser.email || 'user@gmail.com',
+        });
+      }
+    } catch (error) {
+      console.error('OAuth sign in failed', error);
+    }
+  };
+
+  const authPanel = (
+    <AuthPanel
+      user={user}
+      onSignIn={handleSignIn}
+      onSignOut={async () => {
+        await auth.signOut();
+        setUser(null);
+      }}
+    />
+  );
 
   if (activeMovie) {
     return (
@@ -120,34 +201,16 @@ const App = () => {
               <button type="button" className="ghost-button" onClick={() => setShowSettings(true)}>
                 Settings
               </button>
-              <AuthPanel
-                user={user}
-                onSignIn={async () => {
-                  try {
-                    await auth.signInWithGoogle();
-                    const sessionUser = await auth.checkSession();
-                    if (sessionUser) {
-                      setUser({
-                        name: sessionUser.name || 'Google User',
-                        email: sessionUser.email || 'user@gmail.com',
-                      });
-                    }
-                  } catch (error) {
-                    console.error('OAuth sign in failed', error);
-                  }
-                }}
-                onSignOut={async () => {
-                  await auth.signOut();
-                  setUser(null);
-                }}
-              />
+              {authPanel}
             </div>
           </header>
 
           <MovieDetail
             movie={activeMovie}
             relatedMovies={relatedMovies}
-            onBack={() => setActiveMovieId(null)}
+            loading={detailLoading}
+            error={detailError}
+            onBack={() => setActiveMovie(null)}
             onMovieSelect={handleSelectMovie}
           />
 
@@ -158,6 +221,7 @@ const App = () => {
               onClose={() => setShowSettings(false)}
             />
           )}
+          <footer className="data-attribution">This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">TMDB API</a> but is not endorsed or certified by TMDB.</footer>
         </div>
       </main>
     );
@@ -175,27 +239,7 @@ const App = () => {
             <button type="button" className="ghost-button" onClick={() => setShowSettings(true)}>
               Settings
             </button>
-            <AuthPanel
-              user={user}
-              onSignIn={async () => {
-                try {
-                  await auth.signInWithGoogle();
-                  const sessionUser = await auth.checkSession();
-                  if (sessionUser) {
-                    setUser({
-                      name: sessionUser.name || 'Google User',
-                      email: sessionUser.email || 'user@gmail.com',
-                    });
-                  }
-                } catch (error) {
-                  console.error('OAuth sign in failed', error);
-                }
-              }}
-              onSignOut={async () => {
-                await auth.signOut();
-                setUser(null);
-              }}
-            />
+            {authPanel}
           </div>
         </header>
 
@@ -246,7 +290,7 @@ const App = () => {
             </div>
             <div className="trending-row">
               {trendingMovies.map((movie, index) => (
-                <button type="button" key={movie.id} className="trending-item" onClick={() => handleSelectMovie(movie.id)}>
+                <button type="button" key={movie.id} className="trending-item" onClick={() => handleSelectMovie(movie)}>
                   <span className="rank">{index + 1}</span>
                   <img src={movie.poster} alt={movie.title} />
                 </button>
@@ -265,13 +309,19 @@ const App = () => {
               <Spinner />
             </div>
           ) : (
-            <div className="movie-grid">
-              {movieList.map((movie) => (
-                <MovieCard key={movie.id} movie={movie} onSelect={() => handleSelectMovie(movie.id)} />
-              ))}
-            </div>
+            <>
+              {apiError && <p role="alert">{apiError}</p>}
+              {movieList.length ? (
+                <div className="movie-grid">
+                  {movieList.map((movie) => (
+                    <MovieCard key={movie.id} movie={movie} onSelect={() => handleSelectMovie(movie)} />
+                  ))}
+                </div>
+              ) : !apiError && <p>No titles found. Try another title, actor, or director.</p>}
+            </>
           )}
         </section>
+        <footer className="data-attribution">This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">TMDB API</a> but is not endorsed or certified by TMDB.</footer>
       </div>
 
       {showSettings && (
