@@ -1,134 +1,288 @@
-import React, { useEffect, useState} from 'react'
-import Search from "./components/search.jsx";
-import Spinner from "./components/spinner.jsx";
-import MovieCard from "./components/MovieCard.jsx";
-import {useDebounce, useFirstMountState} from "react-use";
-import {getTrendingMovies, updateSearchCount} from "./appwrite.js";
+import { useEffect, useMemo, useState } from 'react';
+import Search from './components/search.jsx';
+import Spinner from './components/spinner.jsx';
+import MovieCard from './components/MovieCard.jsx';
+import MovieDetail from './components/MovieDetail.jsx';
+import AuthPanel from './components/AuthPanel.jsx';
+import SettingsPanel from './components/SettingsPanel.jsx';
+import { auth, getTrendingMovies } from './appwrite.js';
+import { getMovieById, searchMovieLibrary } from './data.js';
 
-const API_BASE_URL = 'https://api.themoviedb.org/3';
-
-const API_KEY = import.meta.env.VITE_TMDB_API_KEY;
-
-const API_OPTIONS = {
-    method: 'GET',
-    headers: {
-        accept: 'application/json',
-        Authorization: `Bearer ${API_KEY}`
-    }
-}
+const DEFAULT_SETTINGS = {
+  region: 'global',
+  theme: 'midnight',
+  streaming: 'all',
+  saveHistory: true,
+  showGuides: true,
+};
 
 const App = () => {
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
-    const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeMovieId, setActiveMovieId] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [recentSearches, setRecentSearches] = useState([
+    'Dune',
+    'spider verse',
+    'solo leveling',
+    'attack on titan',
+  ]);
+  const [showSearchHistory, setShowSearchHistory] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [user, setUser] = useState(null);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [movieList, setMovieList] = useState([]);
 
-    const [movieList, setMovieList] = useState([]);
-    const [errorMessage, setErrorMessage] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
+  const trendingMovies = useMemo(() => getTrendingMovies(), []);
 
-    const [trendingMovies, setTrendingMovies] = useState([]);
+  useEffect(() => {
+    const loadSession = async () => {
+      const sessionUser = await auth.checkSession();
+      if (sessionUser) {
+        setUser({
+          name: sessionUser.name || 'Reeli User',
+          email: sessionUser.email || 'user@reeli.app',
+        });
+      }
+    };
 
-    // Debounce the search term to prevent making too many API requests
-    // by waiting for the user to stop typing for 500 ms
-    useDebounce(() => setDebouncedSearchTerm(searchTerm), 500, [searchTerm])
+    loadSession();
+  }, []);
 
-    const fetchMovies = async (query = '') => {
-        setIsLoading(true);
-        setErrorMessage('');
+  const updateRecentSearches = (nextSearch) => {
+    const trimmed = nextSearch.trim();
+    if (!trimmed) return;
 
-        try {
-          const endpoint = query
-              ? `${API_BASE_URL}/search/movie?query=${encodeURIComponent(query)}`
-              : `${API_BASE_URL}/discover/movie?sort_by=popularity.desc`;
+    setRecentSearches((previous) => {
+      const next = [trimmed, ...previous.filter((item) => item.toLowerCase() !== trimmed.toLowerCase())];
+      return next.slice(0, 6);
+    });
+  };
 
-          const response = await fetch(endpoint, API_OPTIONS);
+  const handleSearchChange = (value) => {
+    setSearchTerm(value);
+    setShowSearchHistory(Boolean(value));
+  };
 
-          if(!response.ok){
-              throw new Error('Failed to fetch movies');
-          }
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsLoading(true);
+      const matches = searchMovieLibrary(searchTerm);
+      setMovieList(matches);
+      if (searchTerm.trim()) {
+        updateRecentSearches(searchTerm);
+      }
+      setTimeout(() => setIsLoading(false), 150);
+    }, 200);
 
-          const data = await response.json();
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
 
-          if(data.Response === 'False'){
-              setErrorMessage(data.Error || 'Failed to fetch movies.');
-              setMovieList([]);
-              return;
-          }
+  useEffect(() => {
+    setMovieList(searchMovieLibrary(''));
+  }, []);
 
-          setMovieList(data.results || []);
+  const activeMovie = useMemo(
+    () => getMovieById(activeMovieId),
+    [activeMovieId],
+  );
 
-          if(query && data.results.length > 0) {
-              await updateSearchCount(query, data.results[0]);
-          }
-        }catch (error) {
-            console.error(`Error fetching movies: ${error}`);
-            setErrorMessage('Error fetching movies. Please try again later.');
-        }finally {
-            setIsLoading(false);
-        }
-    }
+  const relatedMovies = useMemo(() => {
+    if (!activeMovie) return [];
 
-    const loadTrendingMovies = async () => {
-        try {
-            const movies = await getTrendingMovies();
+    const relatedIds = activeMovie.related || [];
+    return relatedIds
+      .map((id) => getMovieById(id))
+      .filter(Boolean)
+      .slice(0, 3);
+  }, [activeMovie]);
 
-            setTrendingMovies(movies);
-        }catch (error) {
-            console.error(`Error fetching movies: ${error}`);
-        }
-    }
+  const applySetting = (key, value) => {
+    setSettings((current) => ({ ...current, [key]: value }));
+  };
 
-    useEffect(() => {
-        fetchMovies(debouncedSearchTerm);
-    }, [debouncedSearchTerm]);
+  const handleSelectMovie = (movieId) => {
+    setActiveMovieId(movieId);
+    setShowSearchHistory(false);
+  };
 
-    useEffect(() => {
-        loadTrendingMovies();
-    }, []);
+  const clearSearchHistory = () => setRecentSearches([]);
 
+  if (activeMovie) {
     return (
-        <main>
-            <div className="pattern"/>
-
-            <div className="wrapper">
-                <header>
-                    <img src="./hero.png" alt="Hero Banner"/>
-                    <h1>Find <span className="text-gradient">Movies</span> You'll Enjoy Without The Hassle</h1>
-
-                    <Search searchTerm={searchTerm} setSearchTerm={setSearchTerm}/>
-                </header>
-
-                {trendingMovies.length > 0 && (
-                    <section className="trending">
-                        <h2>Trending Movies</h2>
-
-                        <ul>
-                            {trendingMovies.map((movie, index) => (
-                                <li key={movie.$id}>
-                                    <p>{index + 1}</p>
-                                    <img src={movie.poster_url} alt={movie.title}/>
-                                </li>
-                            ))}
-                        </ul>
-                    </section>
-                )}
-
-                <section className="all-movies">
-                    <h2>All Movies</h2>
-
-                    {isLoading ? (
-                        <Spinner/>
-                    ) : errorMessage ? (
-                        <p className="text-red-500">{errorMessage}</p>
-                    ) : (
-                        <ul>
-                            {movieList.map((movie) => (
-                                <MovieCard key={movie.id} movie={movie}/>
-                            ))}
-                        </ul>
-                    )}
-                </section>
+      <main className={`app-shell theme-${settings.theme}`}>
+        <div className="app-surface">
+          <header className="topbar">
+            <div className="brand-block">
+              <span className="brand-mark">R</span>
+              <span>Reeli</span>
             </div>
-        </main>
-    )
-}
-export default App
+            <div className="topbar-actions">
+              <button type="button" className="ghost-button" onClick={() => setShowSettings(true)}>
+                Settings
+              </button>
+              <AuthPanel
+                user={user}
+                onSignIn={async () => {
+                  try {
+                    await auth.signInWithGoogle();
+                    const sessionUser = await auth.checkSession();
+                    if (sessionUser) {
+                      setUser({
+                        name: sessionUser.name || 'Google User',
+                        email: sessionUser.email || 'user@gmail.com',
+                      });
+                    }
+                  } catch (error) {
+                    console.error('OAuth sign in failed', error);
+                  }
+                }}
+                onSignOut={async () => {
+                  await auth.signOut();
+                  setUser(null);
+                }}
+              />
+            </div>
+          </header>
+
+          <MovieDetail
+            movie={activeMovie}
+            relatedMovies={relatedMovies}
+            onBack={() => setActiveMovieId(null)}
+            onMovieSelect={handleSelectMovie}
+          />
+
+          {showSettings && (
+            <SettingsPanel
+              settings={settings}
+              onChange={applySetting}
+              onClose={() => setShowSettings(false)}
+            />
+          )}
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className={`app-shell theme-${settings.theme}`}>
+      <div className="app-surface">
+        <header className="topbar">
+          <div className="brand-block">
+            <span className="brand-mark">R</span>
+            <span>Reeli</span>
+          </div>
+          <div className="topbar-actions">
+            <button type="button" className="ghost-button" onClick={() => setShowSettings(true)}>
+              Settings
+            </button>
+            <AuthPanel
+              user={user}
+              onSignIn={async () => {
+                try {
+                  await auth.signInWithGoogle();
+                  const sessionUser = await auth.checkSession();
+                  if (sessionUser) {
+                    setUser({
+                      name: sessionUser.name || 'Google User',
+                      email: sessionUser.email || 'user@gmail.com',
+                    });
+                  }
+                } catch (error) {
+                  console.error('OAuth sign in failed', error);
+                }
+              }}
+              onSignOut={async () => {
+                await auth.signOut();
+                setUser(null);
+              }}
+            />
+          </div>
+        </header>
+
+        <section className="hero-banner">
+          <div className="hero-copy">
+            <p className="eyebrow">Everything about the movie you want</p>
+            <h1>Find stories, actors, directors, and where to watch.</h1>
+            <p className="hero-subtitle">
+              Search by title, actor, director, tags, genre, or anime and series status.
+            </p>
+          </div>
+          <div className="search-shell">
+            <Search
+              searchTerm={searchTerm}
+              setSearchTerm={handleSearchChange}
+              recentSearches={recentSearches}
+              showSearchHistory={showSearchHistory}
+              onSelectRecent={(value) => {
+                setSearchTerm(value);
+                setShowSearchHistory(false);
+              }}
+              onClearHistory={clearSearchHistory}
+            />
+          </div>
+        </section>
+
+        {settings.showGuides && (
+          <section className="guidance-strip">
+            <div>
+              <strong>Watch guides</strong>
+              <span>Anime, series, manga, and streaming availability</span>
+            </div>
+            <div>
+              <strong>Safe search</strong>
+              <span>Recent searches and personalized preferences</span>
+            </div>
+            <div>
+              <strong>Smart filters</strong>
+              <span>Actor, director, tags, and title discovery</span>
+            </div>
+          </section>
+        )}
+
+        {trendingMovies.length > 0 && (
+          <section className="trending">
+            <div className="section-header">
+              <h2>Trending</h2>
+            </div>
+            <div className="trending-row">
+              {trendingMovies.map((movie, index) => (
+                <button type="button" key={movie.id} className="trending-item" onClick={() => handleSelectMovie(movie.id)}>
+                  <span className="rank">{index + 1}</span>
+                  <img src={movie.poster} alt={movie.title} />
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        <section className="results-section">
+          <div className="section-header">
+            <h2>{searchTerm ? 'Matching titles' : 'Featured picks'}</h2>
+          </div>
+
+          {isLoading ? (
+            <div className="loading-wrap">
+              <Spinner />
+            </div>
+          ) : (
+            <div className="movie-grid">
+              {movieList.map((movie) => (
+                <MovieCard key={movie.id} movie={movie} onSelect={() => handleSelectMovie(movie.id)} />
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      {showSettings && (
+        <SettingsPanel
+          settings={settings}
+          onChange={applySetting}
+          onClose={() => setShowSettings(false)}
+        />
+      )}
+    </main>
+  );
+};
+
+export default App;
