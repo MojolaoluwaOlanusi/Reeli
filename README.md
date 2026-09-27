@@ -1,6 +1,6 @@
 # Reeli
 
-Reeli searches TMDB for movies, series, and people, and shows live title details, trailers, and regional streaming providers when TMDB has availability data. Recent searches and preferences are stored in the current browser. Google sign-in uses Appwrite.
+Reeli searches TMDB for movies, series, and people, and shows live title details, trailers, and regional streaming providers when TMDB has availability data. Anime synopses and manga/manhwa source metadata are supplemented from AniList when available. Recent searches and preferences are stored in the current browser. Google sign-in uses Appwrite.
 
 ## Environment
 
@@ -16,7 +16,20 @@ Required only for Google sign-in:
 - `VITE_APPWRITE_PROJECT_ID`: Appwrite project ID.
 - `VITE_APPWRITE_ENDPOINT`: Appwrite API endpoint, for example `https://fra.cloud.appwrite.io/v1`.
 
-The Appwrite endpoint and project ID are public client configuration, not secrets. Configure the Google OAuth provider in the Appwrite Console and add both local and production hostnames to the project's web platform domains. Appwrite supplies the Google callback URL; Google OAuth client credentials belong in Appwrite, not this app's frontend environment.
+The Appwrite endpoint and project ID are public client configuration, not secrets. In Appwrite Console:
+
+1. Open **Auth → Settings → OAuth2 providers** and enable **Google**.
+2. Create a Google OAuth client in Google Cloud Console. Copy Appwrite's displayed callback URL into the Google client's **Authorized redirect URIs**.
+3. Paste the Google client ID and secret into Appwrite's Google provider settings. Do not add Google's secret to this app's `.env`.
+4. Under **Auth → Settings → Platforms**, add `localhost` and your Vercel hostname (for example `reeli-movies.vercel.app`) as Web platforms.
+5. Set the production and local hostnames as allowed redirect origins if your Appwrite Console presents that setting.
+6. Copy the Appwrite **Project ID** from project settings and the **API Endpoint** from the project overview into `.env.local` using the variable names above.
+
+The endpoint and project ID are public client configuration, not secrets. Google OAuth client credentials belong in Appwrite. Google sign-in creates a new account on first login and signs returning users in. `VITE_APPWRITE_DATABASE_ID` and `VITE_APPWRITE_COLLECTION_ID` are not needed by this version; search history and preferences are browser-local and do not sync between accounts.
+
+### Appwrite setup review
+
+For the current feature set, the Appwrite project only needs the Google OAuth provider and web platforms. Do not create a database or API key just for sign-in. If you later want shared cross-account recommendation signals, add a server-only Appwrite API key with the minimum document permissions and an aggregate collection; never put that key in a `VITE_` variable. Current picks use TMDB regional popularity plus this browser's locally recorded genre interests, not other Reeli users' private search history.
 
 `VITE_APPWRITE_DATABASE_ID` and `VITE_APPWRITE_COLLECTION_ID` are not currently needed. History and preferences stay in browser storage and are not synchronized between devices or accounts.
 
@@ -31,7 +44,9 @@ The Node/Express server hosts Vite in development and proxies TMDB requests thro
 
 ## Production
 
-Deploy to a Node.js host that can run Express and provide the server-only TMDB credential as a secret environment variable. Build and start:
+The app includes Vercel routing for `/movies/...` refreshes and a serverless `/api` handler. In Vercel Project Settings, add `TMDB_API_READ_ACCESS_TOKEN` (recommended) or `TMDB_API_KEY` as a server-side environment variable, and add `VITE_APPWRITE_PROJECT_ID` plus `VITE_APPWRITE_ENDPOINT` for Google sign-in. Redeploy after setting them. Direct movie URLs use `/movies/movie/:tmdbId` or `/movies/tv/:tmdbId`.
+
+For a standalone Node.js host, provide the server-only TMDB credential as a secret environment variable, then build and start:
 
 ```powershell
 npm run build

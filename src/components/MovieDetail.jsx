@@ -14,45 +14,48 @@ const formatDate = (dateString) => {
   });
 };
 
-const MovieDetail = ({ movie, relatedMovies, loading, error, onBack, onMovieSelect }) => {
+const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
   if (!movie) return null;
 
   const watchLinks = movie.whereToWatch || [];
+  const year = (date) => date ? date.slice(0, 4) : '';
+  const airTimeline = movie.isSeries
+    ? `${year(movie.firstAirDate || movie.releaseDate)}${movie.inProduction ? ' – Now' : movie.lastAirDate ? ` – ${year(movie.lastAirDate)}` : ''}`
+    : year(movie.releaseDate);
 
   return (
     <section className="movie-detail">
       <button className="back-button" onClick={onBack} type="button">
-        ← Back to discovery
+        <span aria-hidden="true">←</span> Back to discovery
       </button>
-      {loading && <p role="status">Loading title details...</p>}
-      {error && <p role="alert">{error}</p>}
 
       <div
         className="detail-hero"
         style={{
-          backgroundImage: `linear-gradient(180deg, rgba(2,6,23,0.25), rgba(2,6,23,0.9)), url(${movie.backdrop})`,
+          backgroundImage: movie.backdrop ? `linear-gradient(90deg, rgba(10,10,10,0.94), rgba(10,10,10,0.26)), url(${movie.backdrop})` : undefined,
         }}
       >
         <div className="detail-hero__content">
           <div className="detail-poster-wrap">
-            <img src={movie.poster} alt={movie.title} className="detail-poster" />
+            {movie.poster && <img src={movie.poster} alt={movie.title} className="detail-poster" />}
           </div>
 
           <div className="detail-copy">
-            <p className="eyebrow">{movie.contentType}</p>
+            <p className="eyebrow">{movie.contentType} {movie.ageRating && <span className="rating-chip">{movie.ageRating}</span>}</p>
             <h1>{movie.title}</h1>
             <p className="tagline">{movie.tagline}</p>
 
             <div className="meta-row">
-              <span>{movie.genres?.join(' • ') || 'General'}</span>
-              <span>{formatDate(movie.releaseDate)}</span>
+              {movie.voteAverage > 0 && <span className="detail-score">★ {movie.voteAverage.toFixed(1)} / 10</span>}
+              <span>{movie.genres?.join(' · ') || 'Genre unavailable'}</span>
+              <span>{airTimeline || 'Release date unavailable'}</span>
               <span>{formatRuntime(movie.runtime)}</span>
             </div>
 
             <div className="badge-row">
               {movie.isAnime && <span className="badge badge--accent">Anime</span>}
-              {movie.hasManga && <span className="badge">Has Manga</span>}
-              {movie.hasManhwa && <span className="badge">Has Manhwa</span>}
+              {movie.hasManga === true && <span className="badge">Has Manga</span>}
+              {movie.hasManhwa === true && <span className="badge">Has Manhwa</span>}
               {movie.isSeries && <span className="badge">Series</span>}
               {movie.seriesStatus && <span className="badge">{movie.seriesStatus}</span>}
             </div>
@@ -98,8 +101,8 @@ const MovieDetail = ({ movie, relatedMovies, loading, error, onBack, onMovieSele
               <div>
                 <h3>Actors</h3>
                 <ul>
-                  {(movie.actors || []).map((actor) => (
-                    <li key={actor}>{actor}</li>
+                  {(movie.characters || movie.actors?.map((actor) => ({ name: actor, character: '' })) || []).map((person) => (
+                    <li key={`${person.name}-${person.character}`}><span>{person.name}</span>{person.character && <small>{person.character}</small>}</li>
                   ))}
                 </ul>
               </div>
@@ -119,6 +122,7 @@ const MovieDetail = ({ movie, relatedMovies, loading, error, onBack, onMovieSele
                   ))}
                 </ul>
               </div>
+              {movie.createdBy?.length > 0 && <div><h3>Created by</h3><ul>{movie.createdBy.map((person) => <li key={person}>{person}</li>)}</ul></div>}
             </div>
           </div>
         </div>
@@ -127,14 +131,19 @@ const MovieDetail = ({ movie, relatedMovies, loading, error, onBack, onMovieSele
           <div className="panel">
             <h2>Quick facts</h2>
             <ul className="facts-list">
-              <li><strong>Release:</strong> {formatDate(movie.releaseDate)}</li>
-              <li><strong>Runtime:</strong> {formatRuntime(movie.runtime)}</li>
+              <li><strong>Age rating:</strong> {movie.ageRating || 'Not rated'}</li>
+              <li><strong>{movie.isSeries ? 'Aired:' : 'Released:'}</strong> {airTimeline || formatDate(movie.releaseDate)}</li>
+              <li><strong>{movie.isSeries ? 'Episode length:' : 'Runtime:'}</strong> {formatRuntime(movie.runtime)}</li>
               <li><strong>Type:</strong> {movie.contentType}</li>
               <li><strong>Series status:</strong> {movie.seriesStatus || 'Unknown'}</li>
+              {movie.isSeries && <li><strong>Seasons:</strong> {movie.numberOfSeasons || 'Unknown'}</li>}
+              {movie.isSeries && <li><strong>Episodes:</strong> {movie.numberOfEpisodes || 'Unknown'}</li>}
               <li><strong>Anime:</strong> {movie.isAnime ? 'Yes' : 'Not identified'}</li>
               <li><strong>Manga:</strong> {movie.hasManga == null ? 'Unknown' : movie.hasManga ? 'Yes' : 'No'}</li>
               <li><strong>Manhwa:</strong> {movie.hasManhwa == null ? 'Unknown' : movie.hasManhwa ? 'Yes' : 'No'}</li>
-              <li><strong>More entries:</strong> {movie.seriesStatus?.startsWith('Part of ') ? movie.seriesStatus.slice(8) : movie.isSeries ? 'Series' : 'Standalone'}</li>
+              <li><strong>Original title:</strong> {movie.originalTitle || movie.title}</li>
+              <li><strong>Language:</strong> {movie.originalLanguage?.toUpperCase() || 'Unknown'}</li>
+              {movie.productionCompanies?.length > 0 && <li><strong>Production:</strong> {movie.productionCompanies.join(', ')}</li>}
             </ul>
           </div>
 
@@ -151,7 +160,7 @@ const MovieDetail = ({ movie, relatedMovies, loading, error, onBack, onMovieSele
                   <img src={relatedMovie.poster} alt={relatedMovie.title} />
                   <div>
                     <strong>{relatedMovie.title}</strong>
-                    <span>{relatedMovie.contentType}</span>
+                    <span>{relatedMovie.releaseDate?.slice(0, 4)} · {relatedMovie.contentType}</span>
                   </div>
                 </button>
               ))}

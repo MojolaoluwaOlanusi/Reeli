@@ -25,9 +25,8 @@ const SettingsPanel = ({ settings, onChange, onClose }) => {
           <label>
             <span>Theme</span>
             <select value={settings.theme} onChange={(event) => onChange('theme', event.target.value)}>
-              <option value="midnight">Midnight</option>
-              <option value="sunset">Sunset</option>
-              <option value="forest">Forest</option>
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
             </select>
           </label>
 

@@ -5,6 +5,7 @@ const Search = ({
   setSearchTerm,
   recentSearches = [],
   showSearchHistory = false,
+  onFocus,
   onSelectRecent,
   onClearHistory,
 }) => {
@@ -18,6 +19,7 @@ const Search = ({
             placeholder="Search by movie, actor, director, tag, or genre"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
+            onFocus={onFocus}
           />
         </div>
       </div>

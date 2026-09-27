@@ -20,13 +20,16 @@ export const auth = {
     }
   },
 
-  signInWithGoogle: async () => {
+  signInWithGoogle: async (successUrl = window.location.href) => {
     if (!PROJECT_ID) {
       throw new Error('Missing Appwrite project ID. Add VITE_APPWRITE_PROJECT_ID to your environment.');
     }
 
-    const redirectUrl = `${window.location.origin}`;
-    await account.createOAuth2Session('google', redirectUrl, redirectUrl);
+    await account.createOAuth2Session(
+      'google',
+      successUrl,
+      `${window.location.origin}/?auth=failed`,
+    );
   },
 
   signOut: async () => {
