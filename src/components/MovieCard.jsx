@@ -28,6 +28,19 @@ const MovieCard = ({ movie, onSelect, variant = 'grid' }) => {
   const closePreviewRef = useRef(closePreview);
   closePreviewRef.current = closePreview;
 
+  // FIX: normalize tv -> series, and id fallback
+  const getApiMovie = () => {
+    const rawType = String(movie.mediaType || movie.media_type || movie.type || '').toLowerCase();
+    const normalizedType = ['tv', 'series', 'show'].includes(rawType)? 'series' : 'movie';
+    // handle both tv (first_air_date) and movie cases
+    const finalType = movie.first_air_date || movie.firstAirDate? 'series' : normalizedType;
+    return {
+     ...movie,
+      mediaType: finalType,
+      tmdbId: movie.tmdbId || movie.id,
+    };
+  };
+
   const openPreview = async () => {
     const card = cardRef.current;
     if (!card) return;
@@ -37,26 +50,37 @@ const MovieCard = ({ movie, onSelect, variant = 'grid' }) => {
     const height = 228;
     const left = Math.min(Math.max(12, rect.left), window.innerWidth - width - 12);
     const top = rect.bottom + height + 12 < window.innerHeight
-      ? rect.bottom + 10
+     ? rect.bottom + 10
       : Math.max(12, rect.top - height - 10);
     setPreview({ position: { top, left, width }, loading: true, trailer: null, error: '' });
 
     const controller = new AbortController();
     requestRef.current = controller;
     try {
-      const trailer = await getTitleTrailer(movie, controller.signal);
+      const apiMovie = getApiMovie();
+      const trailer = await getTitleTrailer(apiMovie, controller.signal);
       if (!controller.signal.aborted) {
-        setPreview({ position: { top, left, width }, loading: false, trailer, error: trailer ? '' : 'No trailer available.' });
+        setPreview({
+          position: { top, left, width },
+          loading: false,
+          trailer,
+          error: trailer? '' : 'No trailer available.'
+        });
       }
     } catch (error) {
-      if (error.name !== 'AbortError') {
-        setPreview({ position: { top, left, width }, loading: false, trailer: null, error: error.message });
+      if (error.name!== 'AbortError') {
+        setPreview({
+          position: { top, left, width },
+          loading: false,
+          trailer: null,
+          error: error.message
+        });
       }
     }
   };
 
   const handlePointerDown = (event) => {
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
+    if (event.pointerType === 'mouse' && event.button!== 0) return;
     longPressTriggered.current = false;
     pointerOrigin.current = { x: event.clientX, y: event.clientY };
     stopPreviewTimer();
@@ -79,7 +103,6 @@ const MovieCard = ({ movie, onSelect, variant = 'grid' }) => {
 
   useEffect(() => {
     if (!previewOpen) return undefined;
-
     const dismissOutside = (event) => {
       if (cardRef.current?.contains(event.target) || previewRef.current?.contains(event.target)) return;
       closePreviewRef.current();
@@ -130,16 +153,15 @@ const MovieCard = ({ movie, onSelect, variant = 'grid' }) => {
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) closePreview();
         }}
+        style={{ touchAction: 'pan-y' }}
       >
-        {poster ? <img src={poster} alt={title} loading="lazy" /> : <span className="poster-missing">Reeli</span>}
-
+        {poster? <img src={poster} alt={title} loading="lazy" /> : <span className="poster-missing">Reeli</span>}
         <div className="movie-card__body">
           <div className="movie-card__header">
             <h3>{title}</h3>
           </div>
-
           <div className="content">
-            <span className="muted">{releaseDate ? new Date(releaseDate).getFullYear() : 'N/A'}</span>
+            <span className="muted">{releaseDate? new Date(releaseDate).getFullYear() : 'N/A'}</span>
             {genres[0] && <><span>·</span><span className="lang">{genres[0]}</span></>}
             {voteAverage > 0 && <span className="card-rating">★ {voteAverage.toFixed(1)}</span>}
           </div>
