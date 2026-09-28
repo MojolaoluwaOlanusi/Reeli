@@ -17,7 +17,6 @@ export const interactionStoreConfigured = Boolean(DATABASE_ID && INTERACTIONS_TA
 export const auth = {
   checkSession: async () => {
     if (!PROJECT_ID) return null;
-
     try {
       return await account.get();
     } catch (error) {
@@ -26,23 +25,38 @@ export const auth = {
     }
   },
 
-  signInWithGoogle: async (successUrl = window.location.href) => {
+  signInWithGoogle: async () => {
     if (!PROJECT_ID) {
-      throw new Error('Missing Appwrite project ID. Add VITE_APPWRITE_PROJECT_ID to your environment.');
+      throw new Error('Missing Appwrite project ID');
     }
-
-    const failureUrl = new URL('/', window.location.origin);
-    failureUrl.searchParams.set('auth', 'failed');
-    account.createOAuth2Session({
+    const baseUrl = window.location.origin;
+    account.createOAuth2Token({
       provider: OAuthProvider.Google,
-      success: successUrl,
-      failure: failureUrl.toString(),
+      success: `${baseUrl}/`, 
+      failure: `${baseUrl}/?auth=failed`,
     });
+  },
+
+  handleOAuthCallback: async () => {
+    const params = new URLSearchParams(window.location.search);
+    const userId = params.get('userId');
+    const secret = params.get('secret');
+
+    if (userId && secret) {
+      try {
+        await account.createSession({ userId, secret });
+        window.history.replaceState({}, '', window.location.origin + '/');
+        return await account.get();
+      } catch (e) {
+        console.error('Failed to create session from token', e);
+        return null;
+      }
+    }
+    return null;
   },
 
   signOut: async () => {
     if (!PROJECT_ID) return;
-
     try {
       await account.deleteSession({ sessionId: 'current' });
     } catch (error) {

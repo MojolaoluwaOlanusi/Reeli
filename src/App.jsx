@@ -437,6 +437,12 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
+    auth.handleOAuthCallback().then(() => {
+      auth.checkSession().then(setUser)
+    })
+  }, [])
+
+  useEffect(() => {
     let active = true;
     let checking = false;
     let sessionVerified = false;
