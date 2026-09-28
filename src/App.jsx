@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowUpRight, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { Analytics } from '@vercel/analytics/react';
 import Search from './components/search.jsx';
 import MovieCard from './components/MovieCard.jsx';
 import MovieDetail from './components/MovieDetail.jsx';
@@ -687,6 +688,7 @@ function App() {
       </Routes>
       {showAuth && <AuthGate error={authError} onClose={() => setShowAuth(false)} onSignIn={() => handleSignIn()} />}
       {showSettings && <SettingsPanel settings={settings} countryCode={getCountryName(countryCode)} onChange={applySetting} onClose={() => setShowSettings(false)} />}
+      <Analytics />
     </div>
   );
 }
