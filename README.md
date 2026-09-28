@@ -1,61 +1,110 @@
-# Reeli
+<div align="center">
+	<img src="public/reeli-icon.svg" width="100" alt="Reeli cinema reel icon" />
+	<h1>reeli</h1>
+	<p><strong>Find your next great watch.</strong></p>
+	<p>Explore movies, anime, and series by title, cast, crew, and genre.</p>
+	<p>
+		<a href="https://reeli-movies.vercel.app">Open Reeli</a> ·
+		<a href="#features">Features</a> ·
+		<a href="#getting-started">Get started</a>
+	</p>
+</div>
 
-Reeli searches TMDB for movies, series, and people, and shows live title details, trailers, and regional streaming providers when TMDB has availability data. Anime synopses and manga/manhwa source metadata are supplemented from AniList when available. Recent searches and preferences are stored in the current browser. Google sign-in uses Appwrite.
+<p align="center">
+	<img src="public/reeli.jpeg" alt="Reeli Hero page" width="100%" />
+</p>
 
-## Environment
+## About
 
-Copy `.env.example` to `.env.local` for local development. Never commit `.env.local` or put a TMDB credential in a variable prefixed with `VITE_`.
+Reeli is a movie discovery app built around one question: *what should I watch next?* Browse regional picks, explore horizontal genre shelves, then open a dedicated title page for the story, cast, age rating, release timeline, trailer, and regional watch options.
 
-Required for live movie data, set one server-only credential:
+## Features
 
-- `TMDB_API_READ_ACCESS_TOKEN` (recommended): TMDB API Read Access Token. The Node server sends it to TMDB; it is never bundled into the browser.
-- `TMDB_API_KEY` (alternative): TMDB API v3 key, also kept server-side.
+- Live movie, series, and people search powered by TMDB.
+- Regional picks, ranked with genre interests stored in the current browser.
+- Scrollable shelves for Animation, Anime, Horror, Fantasy, Action, Science Fiction, Comedy, and more.
+- Shareable title routes: `/movies/movie/:id` and `/movies/tv/:id`.
+- Google sign-in with Appwrite; title details are available after signing in.
+- Title pages with cast and roles, crew, age rating, release/air dates, series status, trailers, recommendations, and watch providers.
+- Best-effort AniList enrichment for anime descriptions and manga/manhwa information.
+- Light and dark themes with browser-local preferences and recent searches.
 
-Required only for Google sign-in:
+> **Recommendations:** Picks combine regional TMDB popularity with genre interests from this browser. Reeli does not currently read or expose other users' private search history.
 
-- `VITE_APPWRITE_PROJECT_ID`: Appwrite project ID.
-- `VITE_APPWRITE_ENDPOINT`: Appwrite API endpoint, for example `https://fra.cloud.appwrite.io/v1`.
+## Built With
 
-The Appwrite endpoint and project ID are public client configuration, not secrets. In Appwrite Console:
+| Area | Technology |
+| --- | --- |
+| Frontend | React, Vite, React Router |
+| API | Node.js, Express |
+| Movie data | TMDB API |
+| Anime enrichment | AniList GraphQL |
+| Authentication | Appwrite, Google OAuth |
+| Hosting | Vercel-compatible API and route handlers |
 
-1. Open **Auth → Settings → OAuth2 providers** and enable **Google**.
-2. Create a Google OAuth client in Google Cloud Console. Copy Appwrite's displayed callback URL into the Google client's **Authorized redirect URIs**.
-3. Paste the Google client ID and secret into Appwrite's Google provider settings. Do not add Google's secret to this app's `.env`.
-4. Under **Auth → Settings → Platforms**, add `localhost` and your Vercel hostname (for example `reeli-movies.vercel.app`) as Web platforms.
-5. Set the production and local hostnames as allowed redirect origins if your Appwrite Console presents that setting.
-6. Copy the Appwrite **Project ID** from project settings and the **API Endpoint** from the project overview into `.env.local` using the variable names above.
+## Getting Started
 
-The endpoint and project ID are public client configuration, not secrets. Google OAuth client credentials belong in Appwrite. Google sign-in creates a new account on first login and signs returning users in. `VITE_APPWRITE_DATABASE_ID` and `VITE_APPWRITE_COLLECTION_ID` are not needed by this version; search history and preferences are browser-local and do not sync between accounts.
+### Requirements
 
-### Appwrite setup review
+- Node.js 20 or later
+- A TMDB API Read Access Token or API v3 key
+- An Appwrite project if Google sign-in is required
 
-For the current feature set, the Appwrite project only needs the Google OAuth provider and web platforms. Do not create a database or API key just for sign-in. If you later want shared cross-account recommendation signals, add a server-only Appwrite API key with the minimum document permissions and an aggregate collection; never put that key in a `VITE_` variable. Current picks use TMDB regional popularity plus this browser's locally recorded genre interests, not other Reeli users' private search history.
+### Install and run
 
-`VITE_APPWRITE_DATABASE_ID` and `VITE_APPWRITE_COLLECTION_ID` are not currently needed. History and preferences stay in browser storage and are not synchronized between devices or accounts.
-
-## Run locally
-
-```powershell
+```bash
 npm install
 npm run dev
 ```
 
-The Node/Express server hosts Vite in development and proxies TMDB requests through `/api`. The server reads `.env.local` and `.env`; deployment environment variables take precedence.
+The local Express + Vite app runs at `http://localhost:5173`. It proxies TMDB requests through the server so the TMDB credential is not bundled into the browser.
 
-## Production
+### Environment variables
 
-The app includes Vercel routing for `/movies/...` refreshes and a serverless `/api` handler. In Vercel Project Settings, add `TMDB_API_READ_ACCESS_TOKEN` (recommended) or `TMDB_API_KEY` as a server-side environment variable, and add `VITE_APPWRITE_PROJECT_ID` plus `VITE_APPWRITE_ENDPOINT` for Google sign-in. Redeploy after setting them. Direct movie URLs use `/movies/movie/:tmdbId` or `/movies/tv/:tmdbId`.
+Create `.env.local` in the project root:
 
-For a standalone Node.js host, provide the server-only TMDB credential as a secret environment variable, then build and start:
+```dotenv
+# Required for live movie data. Set one server-only credential.
+TMDB_API_READ_ACCESS_TOKEN=your_tmdb_read_access_token
+# Alternative to the read access token:
+# TMDB_API_KEY=your_tmdb_v3_api_key
 
-```powershell
-npm run build
-$env:NODE_ENV = 'production'
-npm start
+# Optional; required only for Google sign-in.
+VITE_APPWRITE_ENDPOINT=https://your-region.cloud.appwrite.io/v1
+VITE_APPWRITE_PROJECT_ID=your_appwrite_project_id
 ```
 
-The host should route HTTPS traffic to the Node process and set `PORT` if required by the platform. This cannot be deployed as a static-only site because the TMDB proxy must run server-side.
+Do not commit `.env.local`, prefix TMDB credentials with `VITE_`, or put the Google OAuth client secret in the frontend environment.
+
+### Configure Google sign-in
+
+1. In Appwrite Console, enable Google under **Auth → Settings → OAuth2 providers**.
+2. Create a Google OAuth client. Add the callback URL shown by Appwrite to Google's **Authorized redirect URIs**.
+3. Enter the Google client ID and secret in Appwrite's Google provider settings.
+4. Add `localhost` and `reeli-movies.vercel.app` under **Auth → Settings → Platforms** as Web platforms.
+5. Copy the Appwrite project ID and API endpoint into `.env.local`.
+
+No Appwrite database or collection is needed for the current feature set. Recent searches and preferences are stored in the visitor's browser and do not sync across devices.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the local Express + Vite app |
+| `npm run lint` | Run ESLint |
+| `npm run build` | Build the production frontend |
+| `npm start` | Start the standalone Node production server |
+
+## Deployment
+
+Vercel uses the repository's API handlers and route rewrites. Add `TMDB_API_READ_ACCESS_TOKEN` (recommended) or `TMDB_API_KEY` as a server-side environment variable. For Google sign-in, also add `VITE_APPWRITE_PROJECT_ID` and `VITE_APPWRITE_ENDPOINT`. Redeploy after changing environment variables.
+
+For another Node host, run `npm run build` then `npm start`; configure `PORT` and the same environment variables in the host's secret settings.
 
 ## Attribution
 
-This product uses the TMDB API but is not endorsed or certified by TMDB.
+This product uses the TMDB API but is not endorsed or certified by TMDB. Anime data may be supplemented by AniList.
+
+## License
+
+No license has been added yet. All rights reserved unless the repository owner chooses and adds a license.

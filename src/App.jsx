@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import Search from './components/search.jsx';
 import MovieCard from './components/MovieCard.jsx';
 import MovieDetail from './components/MovieDetail.jsx';
@@ -28,7 +29,7 @@ const moviePath = (movie) => `/movies/${movie.mediaType}/${movie.tmdbId}`;
 function Brand() {
   return (
     <Link className="brand" to="/" aria-label="Reeli home">
-      <span className="brand-word"><span>reel</span><span className="brand-i">i<img src="/reeli-mark.svg" alt="" /></span></span>
+      <span className="brand-word"><span>reel</span><span className="brand-i"><img src="/reeli-mark.svg" alt="" /><span className="brand-i-stem" /></span></span>
     </Link>
   );
 }
@@ -51,6 +52,24 @@ function AuthGate({ onSignIn, error, onClose }) {
 }
 
 function Header({ user, theme, onThemeToggle, onSignIn, onSignOut, onSettings }) {
+  const [accountOpen, setAccountOpen] = useState(false);
+  const accountRef = useRef(null);
+
+  useEffect(() => {
+    const closeOnOutsideClick = (event) => {
+      if (!accountRef.current?.contains(event.target)) setAccountOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setAccountOpen(false);
+    };
+    document.addEventListener('pointerdown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, []);
+
   return (
     <header className="site-header">
       <Brand />
@@ -64,10 +83,30 @@ function Header({ user, theme, onThemeToggle, onSignIn, onSignOut, onSettings })
         </button>
         <button className="icon-button settings-toggle" type="button" onClick={onSettings} aria-label="Open settings" title="Settings">⚙</button>
         {user ? (
-          <div className="account-menu">
-            <span className="account-initial">{user.name?.charAt(0)?.toUpperCase() || 'R'}</span>
-            <span className="account-name">{user.name || 'Reeli member'}</span>
-            <button className="text-button" type="button" onClick={onSignOut}>Sign out</button>
+          <div className="account-area" ref={accountRef}>
+            <button
+              className={`account-trigger${accountOpen ? ' is-open' : ''}`}
+              type="button"
+              aria-expanded={accountOpen}
+              aria-haspopup="dialog"
+              onClick={() => setAccountOpen((open) => !open)}
+            >
+              <span className="account-initial">{user.name?.charAt(0)?.toUpperCase() || 'R'}</span>
+              <span className="account-name">{user.name || 'Reeli member'}</span>
+            </button>
+            {accountOpen && <section className="account-popover" aria-label="Account details">
+              <div className="account-popover-heading">
+                <span className="account-initial account-initial--large">{user.name?.charAt(0)?.toUpperCase() || 'R'}</span>
+                <div><strong>{user.name || 'Reeli member'}</strong><span>Signed in to Reeli</span></div>
+              </div>
+              <div className="account-email-label">EMAIL ADDRESS</div>
+              <div className="account-email">{user.email || 'Email unavailable'}</div>
+              <div className="account-popover-divider" />
+              <button className="signout-action" type="button" onClick={() => { setAccountOpen(false); onSignOut(); }}>
+                <LogOut size={16} strokeWidth={2} aria-hidden="true" />
+                <span>Sign out</span>
+              </button>
+            </section>}
           </div>
         ) : (
           <button className="button button--dark header-signin" type="button" onClick={onSignIn}>Sign in</button>
@@ -78,7 +117,16 @@ function Header({ user, theme, onThemeToggle, onSignIn, onSignOut, onSettings })
 }
 
 function MovieRail({ title, subtitle, movies, onSelect }) {
+  const railRef = useRef(null);
+
   if (!movies?.length) return null;
+
+  const scrollRail = (direction) => {
+    const track = railRef.current;
+    if (!track) return;
+    track.scrollBy({ left: direction * Math.max(track.clientWidth * 0.78, 300), behavior: 'smooth' });
+  };
+
   return (
     <section className="movie-rail">
       <div className="rail-heading">
@@ -86,9 +134,13 @@ function MovieRail({ title, subtitle, movies, onSelect }) {
           <h2>{title}</h2>
           {subtitle && <p>{subtitle}</p>}
         </div>
-        <span className="rail-count">{movies.length} titles</span>
+        <div className="rail-controls">
+          <span className="rail-count">{movies.length} titles</span>
+          <button className="rail-arrow" type="button" onClick={() => scrollRail(-1)} aria-label={`Scroll ${title} left`} title="Scroll left"><ChevronLeft size={19} strokeWidth={2.5} /></button>
+          <button className="rail-arrow" type="button" onClick={() => scrollRail(1)} aria-label={`Scroll ${title} right`} title="Scroll right"><ChevronRight size={19} strokeWidth={2.5} /></button>
+        </div>
       </div>
-      <div className="rail-track">
+      <div className="rail-track" ref={railRef}>
         {movies.map((movie) => (
           <MovieCard key={movie.id} movie={movie} variant="rail" onSelect={() => onSelect(movie)} />
         ))}
@@ -151,7 +203,10 @@ function HomePage({
           {genreRows.map((row) => <MovieRail key={row.name} title={row.name} movies={row.titles} onSelect={onSelectMovie} />)}
           {!genreRows.length && error && <p className="empty-copy">Genre collections will appear when the movie service is available.</p>}
         </div>
-        <footer className="site-footer">This product uses the <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer">TMDB API</a> but is not endorsed or certified by TMDB.</footer>
+        <footer className="site-footer flex flex-col items-center gap-2 py-6 text-sm text-zinc-400">
+          <p>This product uses the <a href="https://www.themoviedb.org" target="_blank" rel="noreferrer" className="underline hover:text-white">TMDB API</a> but is not endorsed or certified by TMDB.</p>
+          <p>© {new Date().getFullYear()} Built with care by Mojolaoluwa</p>
+        </footer>
       </div>
     </>
   );

@@ -1,39 +1,55 @@
-import React from 'react';
+import { useState } from 'react';
+import { Search as SearchIcon } from 'lucide-react';
 
 const Search = ({
   searchTerm,
   setSearchTerm,
   recentSearches = [],
-  showSearchHistory = false,
   onFocus,
   onSelectRecent,
   onClearHistory,
 }) => {
+  const [isFocused, setIsFocused] = useState(false);
+  const showHistory = isFocused && !searchTerm?.trim() && recentSearches.length > 0;
+
   return (
     <div className="search-wrap">
       <div className="search">
         <div>
-          <img src="/search.svg" alt="search" />
+          <SearchIcon className="search-icon" size={18} strokeWidth={2} aria-hidden="true" />
           <input
             type="text"
             placeholder="Search by movie, actor, director, tag, or genre"
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
-            onFocus={onFocus}
+            onFocus={() => {
+              setIsFocused(true);
+              onFocus?.();
+            }}
+            onBlur={() => setIsFocused(false)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setIsFocused(false);
+                event.currentTarget.blur();
+              }
+            }}
           />
         </div>
       </div>
 
-      {showSearchHistory && recentSearches.length > 0 && (
+      {showHistory && (
         <div className="search-history">
           <div className="history-header">
             <span>Recent searches</span>
-            <button type="button" onClick={onClearHistory}>Clear</button>
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onClearHistory}>Clear</button>
           </div>
           <ul>
             {recentSearches.map((item) => (
               <li key={item}>
-                <button type="button" onClick={() => onSelectRecent(item)}>{item}</button>
+                <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => {
+                  onSelectRecent(item);
+                  setIsFocused(false);
+                }}>{item}</button>
               </li>
             ))}
           </ul>
