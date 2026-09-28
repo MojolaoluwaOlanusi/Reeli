@@ -14,7 +14,7 @@ const formatDate = (dateString) => {
   });
 };
 
-const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
+const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect, onWatchClick }) => {
   if (!movie) return null;
 
   const watchLinks = movie.whereToWatch || [];
@@ -88,7 +88,7 @@ const MovieDetail = ({ movie, relatedMovies, onBack, onMovieSelect }) => {
             <h2>Where to watch</h2>
             <div className="watch-links">
               {watchLinks.length ? watchLinks.map((entry) => (
-                <a key={`${movie.id}-${entry.name}`} href={entry.url} target="_blank" rel="noreferrer">
+                <a key={`${movie.id}-${entry.name}`} href={entry.url} target="_blank" rel="noreferrer" onClick={() => onWatchClick?.(entry)}>
                   {entry.name}
                 </a>
               )) : <span>Availability is not listed for this region.</span>}

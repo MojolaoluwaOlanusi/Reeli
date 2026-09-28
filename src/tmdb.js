@@ -29,15 +29,19 @@ export const getRegionalPicks = (region, signal) => {
   return request(`/api/picks?${params}`, { signal });
 };
 
+export const getDetectedCountry = (signal) => request('/api/location', { signal });
+
+export const getTitleTrailer = (movie, signal) =>
+  request(`/api/title/${movie.mediaType}/${movie.tmdbId}/trailer`, { signal });
+
 export const getTitleDetails = (movie, region, signal) => {
   const params = new URLSearchParams({ region });
   return request(`/api/title/${movie.mediaType}/${movie.tmdbId}?${params}`, { signal });
 };
 
 export const getRegionCode = (region) => ({
-  global: 'US',
   us: 'US',
   uk: 'GB',
   eu: 'FR',
   asia: 'JP',
-}[region] || 'US');
+}[String(region).toLowerCase()] || (/^[A-Za-z]{2}$/.test(String(region)) ? String(region).toUpperCase() : 'US'));

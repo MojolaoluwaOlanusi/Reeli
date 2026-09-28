@@ -153,6 +153,13 @@ app.get('/api/health', (_request, response) => {
   response.json({ tmdbConfigured: Boolean(process.env.TMDB_API_READ_ACCESS_TOKEN || process.env.TMDB_API_KEY) });
 });
 
+app.get('/api/location', (request, response) => {
+  const candidates = [request.headers['x-vercel-ip-country'], request.headers['cf-ipcountry']];
+  const countryCode = candidates.find((value) => typeof value === 'string' && /^[a-z]{2}$/i.test(value))?.toUpperCase() || '';
+  response.setHeader('Cache-Control', 'private, no-store');
+  response.json({ countryCode });
+});
+
 app.get('/api/trending', async (request, response, next) => {
   if (!hasTmdbToken(response)) return;
   try {
@@ -192,6 +199,11 @@ app.get('/api/genres', async (request, response, next) => {
     { name: 'Action', id: 28 },
     { name: 'Science fiction', id: 878 },
     { name: 'Comedy', id: 35 },
+    { name: 'Sad', id: '18|10749' },
+    { name: 'Cozy', id: '10751|35' },
+    { name: 'Heart-pounding', id: '28|53|27' },
+    { name: 'Feel-good', id: '35|10751' },
+    { name: 'Mind-bending', id: '878|9648' },
   ];
 
   try {
@@ -343,6 +355,27 @@ app.get('/api/title/:mediaType/:id', async (request, response, next) => {
     await enrichAnimeDetails(title);
 
     response.json(title);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/title/:mediaType/:id/trailer', async (request, response, next) => {
+  const { mediaType, id } = request.params;
+  if (!['movie', 'tv'].includes(mediaType) || !/^\d+$/.test(id)) {
+    response.status(400).json({ error: 'Invalid title identifier.' });
+    return;
+  }
+  if (!hasTmdbToken(response)) return;
+
+  try {
+    const videos = await tmdb(`/${mediaType}/${id}/videos`, { language: 'en-US' });
+    const trailer = (videos.results || []).find((video) => video.site === 'YouTube' && video.type === 'Trailer')
+      || (videos.results || []).find((video) => video.site === 'YouTube' && video.type === 'Teaser');
+    response.json(trailer ? {
+      trailerUrl: `https://www.youtube-nocookie.com/embed/${trailer.key}`,
+      videoTitle: trailer.name,
+    } : null);
   } catch (error) {
     next(error);
   }

@@ -1,4 +1,4 @@
-const SettingsPanel = ({ settings, onChange, onClose }) => {
+const SettingsPanel = ({ settings, countryCode, onChange, onClose }) => {
   return (
     <div className="settings-overlay" onClick={onClose}>
       <div className="settings-panel" onClick={(event) => event.stopPropagation()}>
@@ -14,11 +14,19 @@ const SettingsPanel = ({ settings, onChange, onClose }) => {
           <label>
             <span>Default region</span>
             <select value={settings.region} onChange={(event) => onChange('region', event.target.value)}>
+              <option value="auto">Use my location ({countryCode})</option>
               <option value="global">Global</option>
               <option value="us">United States</option>
               <option value="uk">United Kingdom</option>
-              <option value="eu">Europe</option>
-              <option value="asia">Asia</option>
+              <option value="ca">Canada</option>
+              <option value="au">Australia</option>
+              <option value="ng">Nigeria</option>
+              <option value="in">India</option>
+              <option value="jp">Japan</option>
+              <option value="fr">France</option>
+              <option value="de">Germany</option>
+              <option value="br">Brazil</option>
+              <option value="za">South Africa</option>
             </select>
           </label>
 

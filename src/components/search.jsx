@@ -19,7 +19,7 @@ const Search = ({
           <SearchIcon className="search-icon" size={18} strokeWidth={2} aria-hidden="true" />
           <input
             type="text"
-            placeholder="Search by movie, actor, director, tag, or genre"
+            placeholder="Search movies, people, genres..."
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             onFocus={() => {

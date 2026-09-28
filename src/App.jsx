@@ -1,15 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { ArrowUpRight, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import Search from './components/search.jsx';
 import MovieCard from './components/MovieCard.jsx';
 import MovieDetail from './components/MovieDetail.jsx';
 import SettingsPanel from './components/SettingsPanel.jsx';
-import { auth } from './appwrite.js';
-import { getGenreRows, getRegionCode, getRegionalPicks, getTitleDetails, getTrendingTitles, searchTitles } from './tmdb.js';
+import { auth, getUserInteractions, interactionStoreConfigured, recordUserInteraction } from './appwrite.js';
+import { getDetectedCountry, getGenreRows, getRegionCode, getRegionalPicks, getTitleDetails, getTrendingTitles, searchTitles } from './tmdb.js';
 
 const DEFAULT_SETTINGS = {
-  region: 'us',
+  region: 'auto',
   theme: 'light',
   saveHistory: true,
   showGuides: false,
@@ -25,6 +25,79 @@ const readStoredValue = (key, fallback) => {
 };
 
 const moviePath = (movie) => `/movies/${movie.mediaType}/${movie.tmdbId}`;
+const localDateKey = () => {
+  const today = new Date();
+  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+};
+
+const getBrowserCountryCode = () => {
+  try {
+    return new Intl.Locale(navigator.language).region || 'US';
+  } catch {
+    return 'US';
+  }
+};
+const movieKey = (movie) => `${movie.mediaType}:${movie.tmdbId}`;
+
+const getGuestMoviesViewedToday = () => {
+  const record = readStoredValue('reeli.guestDetails', null);
+  return record?.date === localDateKey() && Array.isArray(record.movies) ? record.movies : [];
+};
+
+const canGuestViewMovie = (movie) => {
+  const viewed = getGuestMoviesViewedToday();
+  return viewed.includes(movieKey(movie)) || viewed.length < 3;
+};
+
+const rememberGuestMovieView = (movie) => {
+  const viewed = getGuestMoviesViewedToday();
+  const key = movieKey(movie);
+  if (viewed.includes(key) || viewed.length >= 3) return viewed;
+  const updated = [...viewed, key];
+  try {
+    window.localStorage.setItem('reeli.guestDetails', JSON.stringify({ date: localDateKey(), movies: updated }));
+  } catch {
+    // Enforce the daily preview allowance when browser storage is available.
+  }
+  return updated;
+};
+
+const getCountryName = (countryCode) => {
+  if (!countryCode || countryCode === 'auto') return 'your country';
+  try {
+    const code = /^[a-z]{2}$/i.test(countryCode) ? countryCode.toUpperCase() : countryCode;
+    return new Intl.DisplayNames([navigator.language || 'en'], { type: 'region' }).of(code) || code;
+  } catch {
+    return countryCode;
+  }
+};
+
+const scorePicksFromInteractions = (movies, interactions) => {
+  if (!interactions.length) return movies;
+
+  const genreAffinity = new Map();
+  const seenKeys = new Set();
+  interactions.forEach((interaction) => {
+    const daysAgo = Math.max(0, (Date.now() - new Date(interaction.lastInteractedAt).getTime()) / 86400000);
+    const recency = Number.isFinite(daysAgo) ? Math.exp(-daysAgo / 60) : 0.5;
+    const weight = (Math.min(interaction.detailViews || 0, 8) + Math.min(interaction.watchClicks || 0, 8) * 3) * recency;
+    if (weight <= 0) return;
+
+    seenKeys.add(interaction.movieKey);
+    (interaction.genres || []).forEach((genre) => {
+      genreAffinity.set(genre, (genreAffinity.get(genre) || 0) + weight);
+    });
+  });
+
+  return [...movies].sort((left, right) => {
+    const score = (movie) => {
+      const interest = (movie.genres || []).reduce((total, genre) => total + (genreAffinity.get(genre) || 0), 0);
+      const alreadyOpened = seenKeys.has(`${movie.mediaType}:${movie.tmdbId}`) ? 1.5 : 0;
+      return (movie.voteAverage || 5) + interest * 0.8 - alreadyOpened;
+    };
+    return score(right) - score(left);
+  });
+};
 
 function Brand() {
   return (
@@ -109,7 +182,7 @@ function Header({ user, theme, onThemeToggle, onSignIn, onSignOut, onSettings })
             </section>}
           </div>
         ) : (
-          <button className="button button--dark header-signin" type="button" onClick={onSignIn}>Sign in</button>
+          <button className="button button--yellow header-signin" type="button" onClick={onSignIn}>Sign in</button>
         )}
       </div>
     </header>
@@ -118,6 +191,24 @@ function Header({ user, theme, onThemeToggle, onSignIn, onSignOut, onSettings })
 
 function MovieRail({ title, subtitle, movies, onSelect }) {
   const railRef = useRef(null);
+  const [edges, setEdges] = useState({ start: true, end: false });
+
+  useEffect(() => {
+    const track = railRef.current;
+    if (!track) return undefined;
+
+    const updateEdges = () => {
+      const maxScroll = track.scrollWidth - track.clientWidth;
+      setEdges({ start: track.scrollLeft <= 1, end: maxScroll <= 1 || track.scrollLeft >= maxScroll - 1 });
+    };
+    updateEdges();
+    track.addEventListener('scroll', updateEdges, { passive: true });
+    window.addEventListener('resize', updateEdges);
+    return () => {
+      track.removeEventListener('scroll', updateEdges);
+      window.removeEventListener('resize', updateEdges);
+    };
+  }, [movies?.length]);
 
   if (!movies?.length) return null;
 
@@ -136,8 +227,8 @@ function MovieRail({ title, subtitle, movies, onSelect }) {
         </div>
         <div className="rail-controls">
           <span className="rail-count">{movies.length} titles</span>
-          <button className="rail-arrow" type="button" onClick={() => scrollRail(-1)} aria-label={`Scroll ${title} left`} title="Scroll left"><ChevronLeft size={19} strokeWidth={2.5} /></button>
-          <button className="rail-arrow" type="button" onClick={() => scrollRail(1)} aria-label={`Scroll ${title} right`} title="Scroll right"><ChevronRight size={19} strokeWidth={2.5} /></button>
+          <button className="rail-arrow" type="button" disabled={edges.start} onClick={() => scrollRail(-1)} aria-label={`Scroll ${title} left`} title="Scroll left"><ChevronLeft size={19} strokeWidth={2.5} /></button>
+          <button className="rail-arrow" type="button" disabled={edges.end} onClick={() => scrollRail(1)} aria-label={`Scroll ${title} right`} title="Scroll right"><ChevronRight size={19} strokeWidth={2.5} /></button>
         </div>
       </div>
       <div className="rail-track" ref={railRef}>
@@ -150,20 +241,42 @@ function MovieRail({ title, subtitle, movies, onSelect }) {
 }
 
 function HomePage({
-  user, settings, searchTerm, recentSearches, showSearchHistory, setShowSearchHistory,
-  onSearch, onClearHistory, onSelectMovie, picks, trending, genreRows, isLoading, error,
+  user, countryCode, guestViewsUsed, searchTerm, recentSearches, showSearchHistory, setShowSearchHistory,
+  onSearch, onClearHistory, onSelectMovie, picks, trending, genreRows, interactions,
+  isLoading, error, interactionError,
 }) {
-  const heroMovie = trending[0] || picks[0];
-  const locationLabel = { us: 'the United States', uk: 'the United Kingdom', eu: 'Europe', asia: 'Asia', global: 'your region' }[settings.region] || 'your region';
-  const affinity = readStoredValue('reeli.genreAffinity', {});
-  const tailoredPicks = useMemo(() => [...picks].sort((left, right) => {
-    const score = (movie) => (movie.voteAverage || 0) + (movie.genres || []).reduce((sum, genre) => sum + (affinity[genre] || 0), 0) * 1.5;
-    return score(right) - score(left);
-  }), [picks, affinity]);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const heroCandidates = useMemo(() => {
+    const seen = new Set();
+    return [...trending, ...picks].filter((movie) => {
+      if (!movie || seen.has(movie.id)) return false;
+      seen.add(movie.id);
+      return true;
+    }).slice(0, 6);
+  }, [trending, picks]);
+  const heroMovie = heroCandidates.length ? heroCandidates[heroIndex % heroCandidates.length] : null;
+  const locationLabel = getCountryName(countryCode);
+  const tailoredPicks = useMemo(() => scorePicksFromInteractions(picks, interactions), [picks, interactions]);
+  const interactionCount = interactions.reduce((total, item) => total + (item.detailViews || 0) + (item.watchClicks || 0), 0);
+  const pickSubtitle = interactionCount
+    ? `Ranked from your ${interactionCount} movie and watch interactions`
+    : `Popular with viewers in ${locationLabel}${user ? ` · Welcome back, ${user.name?.split(' ')[0] || 'there'}` : ''}`;
+
+  useEffect(() => {
+    if (heroCandidates.length < 2) {
+      setHeroIndex(0);
+      return undefined;
+    }
+    const interval = window.setInterval(() => {
+      setHeroIndex((index) => (index + 1) % heroCandidates.length);
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [heroCandidates.length]);
 
   return (
     <>
-      <section className={`hero ${heroMovie?.backdrop ? 'hero--image' : ''}`} style={heroMovie?.backdrop ? { '--hero-image': `url("${heroMovie.backdrop}")` } : undefined}>
+      <section className="hero">
+        <div key={heroMovie?.id || 'reeli-hero'} className="hero-art" style={heroMovie?.backdrop ? { backgroundImage: `url("${heroMovie.backdrop}")` } : undefined} />
         <div className="hero-overlay" />
         <div className="hero-content">
           <p className="eyebrow hero-eyebrow">Stories worth staying in for</p>
@@ -181,16 +294,20 @@ function HomePage({
               onClearHistory={onClearHistory}
             />
           </div>
-          {heroMovie && <button className="button button--yellow hero-cta" type="button" onClick={() => onSelectMovie(heroMovie)}>Explore this title <span aria-hidden="true">↗</span></button>}
+          {heroMovie && <button className="button button--yellow hero-cta" type="button" onClick={() => onSelectMovie(heroMovie)}>Explore this title <ArrowUpRight size={18} strokeWidth={2.5} aria-hidden="true" /></button>}
+          {!user && <p className="guest-preview-count">{guestViewsUsed} of 3 free title details used today</p>}
+          {heroCandidates.length > 1 && <div className="hero-pagination" aria-label="Featured titles">{heroCandidates.slice(0, 6).map((movie, index) => <button key={movie.id} className={index === heroIndex % heroCandidates.length ? 'is-active' : ''} type="button" aria-label={`Show featured title ${index + 1}: ${movie.title}`} aria-current={index === heroIndex % heroCandidates.length ? 'true' : undefined} onClick={() => setHeroIndex(index)} />)}</div>}
         </div>
         {heroMovie && <div className="hero-caption"><span>THIS WEEK ON REELI</span><strong>{heroMovie.title}</strong></div>}
       </section>
 
       <div className="browse-content">
         {error && <p className="api-alert" role="alert">{error}</p>}
+        {interactionError && <p className="api-alert" role="status">{interactionError}</p>}
+        {user && !interactionStoreConfigured && <p className="interaction-note" role="status">Top picks currently use regional popularity. Add the Appwrite interaction database and table to personalize them from your activity.</p>}
         <MovieRail
           title="Top picks for you"
-          subtitle={`Popular with viewers in ${locationLabel}${user ? ` · Welcome back, ${user.name?.split(' ')[0] || 'there'}` : ''}`}
+          subtitle={pickSubtitle}
           movies={tailoredPicks}
           onSelect={onSelectMovie}
         />
@@ -226,15 +343,27 @@ function SearchResultsPage({ query, searchTerm, recentSearches, showSearchHistor
   );
 }
 
-function MovieRoute({ user, checkingSession, region, authError, onSignIn, onSelectMovie }) {
+function MovieRoute({ user, checkingSession, region, authError, onSignIn, onSelectMovie, onRecordInteraction, onGuestView }) {
   const navigate = useNavigate();
   const { mediaType, id } = useParams();
   const [movie, setMovie] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const guestViewAllowed = Boolean(user) || canGuestViewMovie({ mediaType, tmdbId: id });
+  const recordedViewKey = useRef('');
+  const interactionHandler = useRef(onRecordInteraction);
+  const guestViewHandler = useRef(onGuestView);
 
   useEffect(() => {
-    if (checkingSession || !user) {
+    interactionHandler.current = onRecordInteraction;
+  }, [onRecordInteraction]);
+
+  useEffect(() => {
+    guestViewHandler.current = onGuestView;
+  }, [onGuestView]);
+
+  useEffect(() => {
+    if (checkingSession || (!user && !guestViewAllowed)) {
       setMovie(null);
       setLoading(false);
       return undefined;
@@ -243,7 +372,17 @@ function MovieRoute({ user, checkingSession, region, authError, onSignIn, onSele
     setLoading(true);
     setError('');
     getTitleDetails({ mediaType, tmdbId: id }, getRegionCode(region), controller.signal)
-      .then(setMovie)
+      .then((details) => {
+        setMovie(details);
+        const viewKey = user
+          ? `${user.$id}:${details.mediaType}:${details.tmdbId}`
+          : `guest:${localDateKey()}:${details.mediaType}:${details.tmdbId}`;
+        if (recordedViewKey.current !== viewKey) {
+          recordedViewKey.current = viewKey;
+          if (user) interactionHandler.current?.(details, 'detail_view');
+          else guestViewHandler.current?.(details);
+        }
+      })
       .catch((requestError) => {
         if (requestError.name !== 'AbortError') setError(requestError.message);
       })
@@ -251,14 +390,20 @@ function MovieRoute({ user, checkingSession, region, authError, onSignIn, onSele
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [mediaType, id, user, checkingSession, region]);
+  }, [mediaType, id, user, checkingSession, region, guestViewAllowed]);
 
   if (checkingSession) return <main className="detail-loading">Checking your Reeli account...</main>;
-  if (!user) return <main className="detail-loading"><AuthGate error={authError} onClose={() => navigate('/')} onSignIn={() => onSignIn(`/movies/${mediaType}/${id}`)} /></main>;
+  if (!user && !guestViewAllowed) return <main className="detail-loading"><AuthGate error={authError || 'You have used your three free movie details for today. Sign in to keep exploring.'} onClose={() => navigate('/')} onSignIn={() => onSignIn(`/movies/${mediaType}/${id}`)} /></main>;
   if (loading) return <main className="detail-loading">Loading title details...</main>;
   if (error || !movie) return <main className="detail-loading"><p className="api-alert" role="alert">{error || 'This title could not be found.'}</p><Link className="button button--dark" to="/">Back to discovery</Link></main>;
 
-  return <MovieDetail movie={movie} relatedMovies={movie.related || []} onBack={() => navigate('/')} onMovieSelect={onSelectMovie} />;
+  return <MovieDetail
+    movie={movie}
+    relatedMovies={movie.related || []}
+    onBack={() => navigate('/')}
+    onMovieSelect={onSelectMovie}
+    onWatchClick={() => interactionHandler.current?.(movie, 'watch_click')}
+  />;
 }
 
 function App() {
@@ -266,6 +411,11 @@ function App() {
   const location = useLocation();
   const [user, setUser] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [countryCode, setCountryCode] = useState(getBrowserCountryCode);
+  const [guestViewsToday, setGuestViewsToday] = useState(getGuestMoviesViewedToday);
+  const [interactions, setInteractions] = useState([]);
+  const [interactionError, setInteractionError] = useState('');
+  const [interactionRevision, setInteractionRevision] = useState(0);
   const [settings, setSettings] = useState(() => {
     const saved = readStoredValue('reeli.settings', {});
     return { ...DEFAULT_SETTINGS, ...saved, theme: ['light', 'dark'].includes(saved.theme) ? saved.theme : DEFAULT_SETTINGS.theme };
@@ -287,10 +437,115 @@ function App() {
   const [isSearching, setIsSearching] = useState(false);
 
   useEffect(() => {
-    auth.checkSession().then((sessionUser) => {
-      if (sessionUser) setUser({ name: sessionUser.name, email: sessionUser.email });
-    }).finally(() => setCheckingSession(false));
+    let active = true;
+    let checking = false;
+    let sessionVerified = false;
+    let oauthReturnPending = false;
+    const authResult = new URLSearchParams(window.location.search).get('auth');
+    oauthReturnPending = authResult === 'returned';
+
+    const clearAuthResult = () => {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.delete('auth');
+      window.history.replaceState({}, '', `${nextUrl.pathname}${nextUrl.search}${nextUrl.hash}`);
+    };
+
+    const refreshSession = async (initialCheck = false) => {
+      if (checking || sessionVerified) return;
+      checking = true;
+      let sessionUser = null;
+      let sessionError = null;
+      const attempts = oauthReturnPending ? 4 : 1;
+
+      for (let attempt = 0; attempt < attempts; attempt += 1) {
+        try {
+          sessionUser = await auth.checkSession();
+          if (sessionUser || !oauthReturnPending) break;
+        } catch (error) {
+          sessionError = error;
+          if (!oauthReturnPending) break;
+        }
+        await new Promise((resolve) => window.setTimeout(resolve, 350 * (attempt + 1)));
+      }
+
+      if (active) {
+        if (sessionUser) {
+          sessionVerified = true;
+          setUser({ $id: sessionUser.$id, name: sessionUser.name, email: sessionUser.email });
+          setAuthError('');
+          setShowAuth(false);
+        } else if (oauthReturnPending) {
+          setAuthError('Google returned to Reeli, but Appwrite could not restore the session. Check that the exact Reeli website domain is registered as a Web platform in Appwrite. On iPhone, complete the flow in Safari rather than an embedded browser.');
+          setShowAuth(true);
+        } else if (sessionError) {
+          setAuthError(`Could not verify your Reeli session: ${sessionError.message}`);
+        }
+        if (initialCheck) setCheckingSession(false);
+      }
+
+      if (oauthReturnPending) {
+        oauthReturnPending = false;
+        clearAuthResult();
+      }
+      checking = false;
+    };
+
+    if (authResult === 'failed') {
+      setAuthError('Google sign-in did not complete. Check the OAuth redirect URI and Appwrite Web platform settings.');
+      setShowAuth(true);
+      clearAuthResult();
+    }
+
+    const onReturnToPage = () => {
+      if (document.visibilityState === 'visible') refreshSession();
+    };
+    window.addEventListener('pageshow', onReturnToPage);
+    window.addEventListener('focus', onReturnToPage);
+    document.addEventListener('visibilitychange', onReturnToPage);
+    refreshSession(true);
+
+    return () => {
+      active = false;
+      window.removeEventListener('pageshow', onReturnToPage);
+      window.removeEventListener('focus', onReturnToPage);
+      document.removeEventListener('visibilitychange', onReturnToPage);
+    };
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    getDetectedCountry(controller.signal)
+      .then(({ countryCode: detected }) => {
+        if (detected && /^[A-Z]{2}$/.test(detected)) setCountryCode(detected);
+      })
+      .catch(() => {
+        // The browser locale country remains the fallback outside supported edge hosts.
+      });
+    return () => controller.abort();
+  }, []);
+
+  const userId = user?.$id;
+
+  useEffect(() => {
+    if (!userId || !interactionStoreConfigured) {
+      setInteractions([]);
+      return undefined;
+    }
+
+    let active = true;
+    getUserInteractions(userId)
+      .then((documents) => {
+        if (active) {
+          setInteractions(documents);
+          setInteractionError('');
+        }
+      })
+      .catch((error) => {
+        if (active) setInteractionError(`Could not load your Reeli activity: ${error.message}`);
+      });
+
+    return () => { active = false; };
+  }, [userId, interactionRevision]);
 
   useEffect(() => {
     try {
@@ -304,7 +559,7 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const region = getRegionCode(settings.region);
+    const region = getRegionCode(settings.region === 'auto' ? countryCode : settings.region);
     Promise.all([getTrendingTitles(controller.signal), getRegionalPicks(region, controller.signal), getGenreRows(region, controller.signal)])
       .then(([nextTrending, nextPicks, nextRows]) => {
         setTrending(nextTrending);
@@ -316,7 +571,7 @@ function App() {
         if (error.name !== 'AbortError') setHomeError(error.message);
       });
     return () => controller.abort();
-  }, [settings.region]);
+  }, [settings.region, countryCode]);
 
   useEffect(() => {
     const query = searchTerm.trim();
@@ -351,14 +606,28 @@ function App() {
 
   const applySetting = (key, value) => setSettings((current) => ({ ...current, [key]: value }));
 
+  const recordGuestView = (movie) => {
+    setGuestViewsToday(rememberGuestMovieView(movie));
+  };
+
+  const recordInteraction = async (movie, interactionType) => {
+    if (!userId || !interactionStoreConfigured) return;
+    try {
+      await recordUserInteraction(userId, movie, interactionType);
+      setInteractionRevision((revision) => revision + 1);
+      setInteractionError('');
+    } catch (error) {
+      setInteractionError(`Could not save your Reeli activity: ${error.message}`);
+    }
+  };
+
   const selectMovie = (movie) => {
     if (!movie?.mediaType || !movie?.tmdbId) return;
-    try {
-      const affinity = readStoredValue('reeli.genreAffinity', {});
-      (movie.genres || []).forEach((genre) => { affinity[genre] = (affinity[genre] || 0) + 1; });
-      window.localStorage.setItem('reeli.genreAffinity', JSON.stringify(affinity));
-    } catch {
-      // Taste signals improve recommendations when browser storage is available.
+    if (!user && !canGuestViewMovie(movie)) {
+      setAuthRedirect(moviePath(movie));
+      setAuthError('You have used your three free movie details for today. Sign in to keep exploring.');
+      setShowAuth(true);
+      return;
     }
     setAuthRedirect(moviePath(movie));
     navigate(moviePath(movie));
@@ -366,9 +635,10 @@ function App() {
 
   const handleSignIn = async (redirectTo = authRedirect || location.pathname) => {
     setAuthError('');
-    const callback = `${window.location.origin}${redirectTo || '/'}`;
+    const callback = new URL(redirectTo || '/', window.location.origin);
+    callback.searchParams.set('auth', 'returned');
     try {
-      await auth.signInWithGoogle(callback);
+      await auth.signInWithGoogle(callback.toString());
     } catch (error) {
       setAuthError(error.message || 'Sign in could not start. Check the Appwrite setup.');
     }
@@ -404,13 +674,13 @@ function App() {
       <Routes>
         <Route path="/" element={isSearching
           ? <SearchResultsPage query={searchTerm} searchTerm={searchTerm} recentSearches={recentSearches} showSearchHistory={showSearchHistory} onSearch={handleSearch} onFocus={() => setShowSearchHistory(true)} onSelectRecent={(value) => { setSearchTerm(value); setShowSearchHistory(false); }} onClearHistory={clearHistory} movies={searchResults} loading={searchLoading} error={searchError} onSelect={selectMovie} />
-          : <HomePage user={user} settings={settings} searchTerm={searchTerm} recentSearches={recentSearches} showSearchHistory={showSearchHistory} setShowSearchHistory={setShowSearchHistory} onSearch={handleSearch} onClearHistory={clearHistory} onSelectMovie={selectMovie} picks={picks} trending={trending} genreRows={genreRows} isLoading={checkingSession && !picks.length} error={homeError} />}
+          : <HomePage user={user} countryCode={settings.region === 'auto' ? countryCode : settings.region} guestViewsUsed={guestViewsToday.length} searchTerm={searchTerm} recentSearches={recentSearches} showSearchHistory={showSearchHistory} setShowSearchHistory={setShowSearchHistory} onSearch={handleSearch} onClearHistory={clearHistory} onSelectMovie={selectMovie} picks={picks} trending={trending} genreRows={genreRows} interactions={interactions} interactionError={interactionError} isLoading={checkingSession && !picks.length} error={homeError} />}
         />
-        <Route path="/movies/:mediaType/:id" element={<MovieRoute user={user} checkingSession={checkingSession} region={settings.region} authError={authError} onSignIn={handleSignIn} onSelectMovie={selectMovie} />} />
+        <Route path="/movies/:mediaType/:id" element={<MovieRoute user={user} checkingSession={checkingSession} region={getRegionCode(settings.region === 'auto' ? countryCode : settings.region)} authError={authError} onSignIn={handleSignIn} onSelectMovie={selectMovie} onRecordInteraction={recordInteraction} onGuestView={recordGuestView} />} />
         <Route path="*" element={<main className="detail-loading"><h1>That page wandered off.</h1><Link to="/" className="button button--dark">Back to Reeli</Link></main>} />
       </Routes>
       {showAuth && <AuthGate error={authError} onClose={() => setShowAuth(false)} onSignIn={() => handleSignIn()} />}
-      {showSettings && <SettingsPanel settings={settings} onChange={applySetting} onClose={() => setShowSettings(false)} />}
+      {showSettings && <SettingsPanel settings={settings} countryCode={getCountryName(countryCode)} onChange={applySetting} onClose={() => setShowSettings(false)} />}
     </div>
   );
 }
