@@ -104,8 +104,8 @@ Add these table columns:
 | `tmdbId` | String, 20 | Yes | TMDB identifier |
 | `title` | String, 255 | Yes | Display title |
 | `genres` | String array, item size 64 | Yes | Genres used to personalize picks |
-| `detailViews` | Integer | Yes | Default `0`, minimum `0` |
-| `watchClicks` | Integer | Yes | Default `0`, minimum `0` |
+| `detailViews` | Integer | Yes | Default `0`, minimum `0`, no maximum |
+| `watchClicks` | Integer | Yes | Default `0`, minimum `0`, no maximum |
 | `lastInteractedAt` | Datetime | Yes | Updated on each recorded interaction |
 
 Create key indexes for `(ownerId ASC, movieKey ASC)` and `(ownerId ASC, lastInteractedAt DESC)`. Copy the database ID and table ID into `.env.local` using `VITE_APPWRITE_DATABASE_ID` and `VITE_APPWRITE_INTERACTIONS_TABLE_ID`, then restart locally. Add the same values to Vercel's environment settings and redeploy.

@@ -67,6 +67,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .account-email-label { margin-top: 17px; color: var(--muted); font-size: 9px; font-weight: 800; letter-spacing: 1.1px; }
 .account-email { margin-top: 5px; overflow-wrap: anywhere; font-size: 12px; }
 .account-popover-divider { height: 1px; margin: 14px 0 9px; background: var(--line); }
+.settings-action { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 39px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); text-align: left; font-size: 12px; font-weight: 700; transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; margin-bottom: 8px; }
+.settings-action:hover { border-color: #c9a300; background: var(--yellow); color: #191919; }
 .signout-action { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 39px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); text-align: left; font-size: 12px; font-weight: 700; transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
 .signout-action:hover { border-color: #dc3545; background: #dc3545; color: #fff; }
 @keyframes account-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }

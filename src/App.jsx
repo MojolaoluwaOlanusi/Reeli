@@ -176,6 +176,10 @@ function Header({ user, theme, onThemeToggle, onSignIn, onSignOut, onSettings })
               <div className="account-email-label">EMAIL ADDRESS</div>
               <div className="account-email">{user.email || 'Email unavailable'}</div>
               <div className="account-popover-divider" />
+              <button className="settings-action" type="button" onClick={() => { setAccountOpen(false); onSettings(); }}>
+                <span>⚙</span>
+                <span>Settings</span>
+              </button>
               <button className="signout-action" type="button" onClick={() => { setAccountOpen(false); onSignOut(); }}>
                 <LogOut size={16} strokeWidth={2} aria-hidden="true" />
                 <span>Sign out</span>
