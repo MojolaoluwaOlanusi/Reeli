@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Search as SearchIcon } from 'lucide-react';
 
 const Search = ({
@@ -10,7 +10,16 @@ const Search = ({
   onClearHistory,
 }) => {
   const [isFocused, setIsFocused] = useState(false);
+  const searchHistoryRef = useRef(null);
   const showHistory = isFocused && !searchTerm?.trim() && recentSearches.length > 0;
+
+  const handleBlur = (event) => {
+    // Check if the blur is caused by clicking inside the search history dropdown
+    if (searchHistoryRef.current && searchHistoryRef.current.contains(event.relatedTarget)) {
+      return;
+    }
+    setIsFocused(false);
+  };
 
   return (
     <div className="search-wrap">
@@ -26,7 +35,7 @@ const Search = ({
               setIsFocused(true);
               onFocus?.();
             }}
-            onBlur={() => setIsFocused(false)}
+            onBlur={handleBlur}
             onKeyDown={(event) => {
               if (event.key === 'Escape') {
                 setIsFocused(false);
@@ -38,7 +47,7 @@ const Search = ({
       </div>
 
       {showHistory && (
-        <div className="search-history">
+        <div className="search-history" ref={searchHistoryRef}>
           <div className="history-header">
             <span>Recent searches</span>
             <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onClearHistory}>Clear</button>

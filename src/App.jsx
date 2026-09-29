@@ -611,7 +611,7 @@ function App() {
         .finally(() => {
           if (!controller.signal.aborted) setSearchLoading(false);
         });
-    }, 280);
+    }, 400);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [searchTerm, settings.saveHistory]);
 
